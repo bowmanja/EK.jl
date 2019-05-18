@@ -15,18 +15,20 @@ using LinearAlgebra, SpecialFunctions
 ##Parameters
 ###################################################################
 σ = 3 #Elasticity of substitution, Source : Footnote 45, EK2002
-θ = 8.28 #Technology dispersion parameter, Source : Table VI, EK2002
+θ = 8.28 #Technology dispersion parameter(Comparative Advantage), Source : Table VI, EK2002
+β = 0.21 #Labor share in costs, Source : Table VIII, EK2002
 
 
 ###################################################################
 #Generate data
-#Unit costs, Trade costs, Technology shift parameter
+#Wages, Trade costs, Technology shift parameter
 ###################################################################
 N=10 #Number of countries
 
-#Generate unit costs
+#Generate wages costs
 ϵ_temp = randn(N)
-c = 100*fill(1.0,N,1) + ϵ_temp.^2
+w = 1000*fill(1.0,N,1) + ϵ_temp.^2
+
 #Generate trade costs
 ϵ_temp = randn(N,N)
 D = fill(1.0,N,N) + ϵ_temp.^2
@@ -41,20 +43,41 @@ T = 1000*fill(1.0,N,1) + ϵ_temp.^2
 #Model
 ###################################################################
 
-#Multilateral Resistance
-Part1 = T.*c.^(-θ)
-Φ = (D.^(-θ))*Part1
+#price function
+function prices(P_telda,D,T,w,θ,β,σ,N)
+    #Gamma function
+    γ = (gamma((θ+1-σ)/θ))^(1/(1-σ))
 
-#Gamma function
-γ = (gamma((θ+1-σ)/θ))^(1/(1-σ))
-
-#Price Index
-P = γ*Φ.^(-1/θ)
-
-#Trade shares
-Π = Diagonal((Φ.^(-1))*fill(1.0,1,N))*(D.^(-θ))*Diagonal(Part1*fill(1.0,1,N))
-
-
+    Part1 = γ^(-θ)*T.*(w.^(-θ*β)) #create vector with product of gamma, wages^(θβ) and shift parameter
+    Part2 = repeat(transpose(T),N) #create matrix which contain copies of above vector in each row
+    G = (D.^(-θ)).*Part2 # point wise multiplication of distance^(-θ) and above matrix
+    error_vec = P_telda - G*P_telda # calculate error in current equation
+    error = transpose(error_vec)*error_vec
+    return error
+end
 
 
-#covT =(1/N)*diag(Π)'T - ((1/N)*(transpose(diag(Π))*fill(1.0,N,1)))*((1/N)*(transpose(T)*fill(1.0,N,1)))
+f = P_tilde->prices(P_tilde,D,T,w,θ,β,σ,N) #redefine function with single argument
+
+
+#=
+find how to minimize f function
+=#
+
+b=f(fill(1.0,N,1))
+
+
+using NLsolve
+
+function g!(a,P_tilde)
+    a = f(P_tilde)
+    println(a[1])
+end
+x_0 = fill(4.0,N,1)
+a=nlsolve(g!,x_0,autodiff = :forward)
+
+
+
+
+using Optim
+a = optimize(f,fill(1.0,N,1))
