@@ -1,14 +1,12 @@
 ###################################################################
-#=
-Description :
-=#
+#Description
 ###################################################################
 
 
 ###################################################################
 ##Packages
 ###################################################################
-using LinearAlgebra, SpecialFunctions
+using LinearAlgebra, SpecialFunctions, NLsolve
 
 
 ###################################################################
@@ -23,11 +21,11 @@ using LinearAlgebra, SpecialFunctions
 #Generate data
 #Wages, Trade costs, Technology shift parameter
 ###################################################################
-N=10 #Number of countries
+N=43 #Number of countries
 
 #Generate wages costs
 ϵ_temp = randn(N)
-w = 1000*fill(1.0,N,1) + ϵ_temp.^2
+w = 100*fill(1.0,N,1) + 100*ϵ_temp.^2
 
 #Generate trade costs
 ϵ_temp = randn(N,N)
@@ -37,47 +35,43 @@ D=D-Diagonal(D)+I # Make diagonal entries equal 1 (No internal resistance)
 
 #Generate productivity shift parameter
 ϵ_temp = randn(N)
-T = 1000*fill(1.0,N,1) + ϵ_temp.^2
+T = 10*fill(1.0,N,1) + ϵ_temp.^2
 
 ###################################################################
 #Model
 ###################################################################
 
-#price function
-function prices(P_telda,D,T,w,θ,β,σ,N)
-    #Gamma function
-    γ = (gamma((θ+1-σ)/θ))^(1/(1-σ))
-
+############### Step 1 : Fixed point for prices ###################
+function P_fixedpoint(P_telde,D,T,w,θ,β,σ,N)
+    γ = (gamma((θ+1-σ)/θ))^(1/(1-σ)) #Gamma function
     Part1 = γ^(-θ)*T.*(w.^(-θ*β)) #create vector with product of gamma, wages^(θβ) and shift parameter
-    Part2 = repeat(transpose(T),N) #create matrix which contain copies of above vector in each row
+    Part2 = repeat(transpose(Part1),N) #create matrix which contain copies of above vector in each row
     G = (D.^(-θ)).*Part2 # point wise multiplication of distance^(-θ) and above matrix
-    error_vec = P_telda - G*P_telda # calculate error in current equation
-    error = transpose(error_vec)*error_vec
-    return error
+    P_tilde = G*P_telde.^(1-β)
+    return P_tilde
 end
+f(P_tilde) =  P_fixedpoint(P_tilde,D,T,w,θ,β,σ,N) #redefine function with single argument
+
+init=ones(N,1) #initial value
+sol = fixedpoint(f, init)
+P = sol.zero.^(-1/θ)
+
+############### Step 2 : Trade Shares ###################
+
+γ = (gamma((θ+1-σ)/θ))^(1/(1-σ)) #Gamma function
+Part1 = γ^(-θ)*T.*(w.^(-θ*β)).*(P.^(-θ*(1-β))) #create vector with product of gamma, wages^(θβ), P^(-θ(1-β)) and shift parameter
+Part2 = repeat(transpose(Part1),N) #create matrix which contain copies of above vector in each row
+Part3=transpose(repeat(transpose(P.^(-θ)),N)) #create matrix which contain copies of price vector in each row
+Π = (D.^(-θ)).*Part2./Part3 # point wise multiplication of distance^(-θ) and above matrixs
 
 
-f = P_tilde->prices(P_tilde,D,T,w,θ,β,σ,N) #redefine function with single argument
+#Correlation check
+corr = cor(T,diag(Π))
+println(corr)
+
+############### Step 3 : Counterfactual ###################
+# RTA between two countries : reduce distance between single pair and look at change in trade share for all countries
 
 
-#=
-find how to minimize f function
-=#
-
-b=f(fill(1.0,N,1))
-
-
-using NLsolve
-
-function g!(a,P_tilde)
-    a = f(P_tilde)
-    println(a[1])
-end
-x_0 = fill(4.0,N,1)
-a=nlsolve(g!,x_0,autodiff = :forward)
-
-
-
-
-using Optim
-a = optimize(f,fill(1.0,N,1))
+############### Step 4 : Graphics ###################
+#Trade flows in circle
